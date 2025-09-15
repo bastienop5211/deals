@@ -1,0 +1,657 @@
+<!--
+README (à supprimer si besoin)
+===============================
+Objectif : Site de bons plans statique (HTML/CSS) avec un soupçon de JS pour charger les promos du jour et par catégorie.
+Deux modes :
+1) 100% statique (aucune clé API) → on met à jour un fichier JSON /data/deals-YYYY-MM-DD.json via un script externe ou à la main.
+2) Statique + Functions (Netlify/Vercel/Cloudflare Workers) → les functions appellent les APIs d’affiliation en sécurité et renvoient un JSON public consommé par le site.
+
+Arborescence suggérée
+---------------------
+/ (racine)
+  index.html                ← Accueil "Promos du jour"
+  category.html             ← Liste par catégorie (?cat=gaming, high-tech, etc.)
+  /assets
+    styles.css
+    app.js
+  /data
+    deals-2025-09-15.json   ← Exemple de données du jour
+  /netlify/functions
+    fetch-amazon.js         ← (Optionnel) Proxy serverless sécurisé pour Amazon PA-API
+
+Déploiement rapide
+------------------
+- 100% statique : GitHub Pages / Netlify / Vercel (sans functions). Tu remplaces le JSON chaque jour.
+- Avec functions : Netlify ou Vercel. Met tes clés API dans les variables d’environnement du provider.
+
+SEO & mentions
+--------------
+- Indique "Contient des liens affiliés" dans le footer.
+- Ajoute sitemap.xml / robots.txt plus tard si besoin.
+
+-->
+
+<!-- ======================= index.html ======================= -->
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Promos du jour | SuperDeals</title>
+  <link rel="stylesheet" href="assets/styles.css" />
+  <meta name="description" content="Promos du jour mises à jour automatiquement. Bons plans high-tech, gaming, maison.">
+</head>
+<body>
+  <header class="site-header">
+    <h1>🛍️ Promos du jour</h1>
+    <nav>
+      <a href="index.html" class="active">Aujourd'hui</a>
+      <a href="category.html?cat=gaming">Gaming</a>
+      <a href="category.html?cat=high-tech">High‑Tech</a>
+      <a href="category.html?cat=maison">Maison</a>
+      <a href="category.html?cat=mode">Mode</a>
+    </nav>
+  </header>
+
+  <main>
+    <section class="filters">
+      <label>
+        Marchand
+        <select id="filter-merchant">
+          <option value="">Tous</option>
+          <option>Amazon</option>
+          <option>Cdiscount</option>
+          <option>AliExpress</option>
+        </select>
+      </label>
+      <label>
+        Remise minimale
+        <select id="filter-discount">
+          <option value="0">0%</option>
+          <option value="10">10%</option>
+          <option value="20">20%</option>
+          <option value="30">30%</option>
+          <option value="50">50%</option>
+        </select>
+      </label>
+      <label>
+        Tri
+        <select id="sort-by">
+          <option value="discount_desc">Remise ↓</option>
+          <option value="price_asc">Prix ↑</option>
+          <option value="price_desc">Prix ↓</option>
+          <option value="popular_desc">Popularité ↓</option>
+        </select>
+      </label>
+    </section>
+
+    <section id="deals-grid" class="grid"></section>
+  </main>
+
+  <footer>
+    <small>⏱️ Mis à jour : <span id="last-updated">—</span> • ℹ️ Ce site contient des liens affiliés.</small>
+  </footer>
+
+  <script src="assets/app.js"></script>
+  <script>
+    // Chargement des promos du jour (mode 100% statique par défaut)
+    window.DEALS_SOURCE = {
+      mode: 'static', // 'static' | 'function'
+      // Fichier du jour (tu peux mettre la date du jour côté build ou CRON)
+      staticUrl: 'data/deals-2025-09-15.json',
+      // Endpoint serverless (si tu actives /netlify/functions)
+      functionUrl: '/.netlify/functions/fetch-amazon'
+    };
+
+    window.addEventListener('DOMContentLoaded', async () => {
+      await loadDealsForHome();
+    });
+  </script>
+</body>
+</html>
+
+<!-- ======================= category.html ======================= -->
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Catégorie | SuperDeals</title>
+  <link rel="stylesheet" href="assets/styles.css" />
+</head>
+<body>
+  <header class="site-header">
+    <h1>🗂️ Catégorie : <span id="cat-name">—</span></h1>
+    <nav>
+      <a href="index.html">Aujourd'hui</a>
+      <a href="category.html?cat=gaming">Gaming</a>
+      <a href="category.html?cat=high-tech">High‑Tech</a>
+      <a href="category.html?cat=maison">Maison</a>
+      <a href="category.html?cat=mode">Mode</a>
+    </nav>
+  </header>
+  <main>
+    <section class="filters">
+      <label>
+        Marchand
+        <select id="filter-merchant">
+          <option value="">Tous</option>
+          <option>Amazon</option>
+          <option>Cdiscount</option>
+          <option>AliExpress</option>
+        </select>
+      </label>
+      <label>
+        Remise minimale
+        <select id="filter-discount">
+          <option value="0">0%</option>
+          <option value="10">10%</option>
+          <option value="20">20%</option>
+          <option value="30">30%</option>
+          <option value="50">50%</option>
+        </select>
+      </label>
+      <label>
+        Tri
+        <select id="sort-by">
+          <option value="discount_desc">Remise ↓</option>
+          <option value="price_asc">Prix ↑</option>
+          <option value="price_desc">Prix ↓</option>
+          <option value="popular_desc">Popularité ↓</option>
+        </select>
+      </label>
+    </section>
+    <section id="deals-grid" class="grid"></section>
+  </main>
+  <footer>
+    <small>ℹ️ Ce site contient des liens affiliés.</small>
+  </footer>
+  <script src="assets/app.js"></script>
+  <script>
+    window.DEALS_SOURCE = { mode: 'static', staticUrl: 'data/deals-2025-09-15.json', functionUrl: '/.netlify/functions/fetch-amazon' };
+    window.addEventListener('DOMContentLoaded', async () => {
+      const params = new URLSearchParams(location.search);
+      const cat = params.get('cat') || 'high-tech';
+      document.getElementById('cat-name').textContent = cat;
+      await loadDealsForCategory(cat);
+    });
+  </script>
+</body>
+</html>
+
+<!-- ======================= assets/styles.css ======================= -->
+:root {
+  --bg: #0b0f1a;
+  --card: #131a2a;
+  --text: #e8ecf1;
+  --muted: #9fb0c3;
+  --accent: #5eead4;
+  --danger: #ff6b6b;
+}
+* { box-sizing: border-box; }
+html, body { margin: 0; padding: 0; background: var(--bg); color: var(--text); font-family: system-ui, -apple-system, Segoe UI, Roboto, sans-serif; }
+.site-header { display: flex; gap: 1rem; align-items: center; padding: 1rem; border-bottom: 1px solid #1f2937; position: sticky; top: 0; background: rgba(11,15,26,0.8); backdrop-filter: blur(8px); z-index: 10; }
+.site-header h1 { margin: 0; font-size: 1.25rem; }
+nav a { color: var(--muted); text-decoration: none; margin-right: .75rem; padding: .25rem .5rem; border-radius: .5rem; }
+nav a:hover, nav a.active { color: var(--text); background: #1f2937; }
+main { max-width: 1200px; margin: 0 auto; padding: 1rem; }
+.filters { display: flex; gap: 1rem; flex-wrap: wrap; align-items: center; margin-bottom: 1rem; }
+.filters label { font-size: .9rem; color: var(--muted); display: flex; flex-direction: column; gap: .25rem; }
+select { background: var(--card); color: var(--text); border: 1px solid #334155; padding: .5rem .75rem; border-radius: .5rem; }
+.grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(230px, 1fr)); gap: 1rem; }
+.deal-card { background: var(--card); border: 1px solid #1f2937; border-radius: 1rem; overflow: hidden; display: flex; flex-direction: column; }
+.deal-thumb { width: 100%; aspect-ratio: 16/10; object-fit: cover; background: #0f172a; }
+.deal-body { padding: .75rem; display: grid; gap: .5rem; }
+.deal-title { font-size: .95rem; line-height: 1.25rem; height: 2.5rem; overflow: hidden; }
+.deal-price { display: flex; gap: .5rem; align-items: baseline; }
+.deal-price .now { font-weight: 700; }
+.deal-price .was { color: var(--muted); text-decoration: line-through; font-size: .9rem; }
+.badges { display: flex; gap: .5rem; flex-wrap: wrap; }
+.badge { font-size: .75rem; padding: .15rem .45rem; border-radius: .5rem; border: 1px solid #334155; color: var(--muted); }
+.badge.discount { color: #042f2e; background: var(--accent); border-color: transparent; }
+.badge.new { background: #1f2937; }
+.card-actions { padding: .75rem; padding-top: 0; }
+.button { display: inline-block; text-align: center; width: 100%; padding: .6rem .9rem; background: linear-gradient(180deg,#10b981,#059669); color: #06281f; border: none; border-radius: .6rem; font-weight: 700; text-decoration: none; }
+.button:hover { filter: brightness(1.05); }
+footer { max-width: 1200px; margin: 0 auto; padding: 2rem 1rem; color: var(--muted); }
+
+/* ======================= assets/app.js ======================= */
+// Helpers
+async function fetchDeals() {
+  const src = window.DEALS_SOURCE || { mode: 'static', staticUrl: 'data/deals-2025-09-15.json' };
+  try {
+    if (src.mode === 'function') {
+      const res = await fetch(src.functionUrl);
+      return await res.json();
+    } else {
+      const res = await fetch(src.staticUrl + `?t=${Date.now()}`);
+      return await res.json();
+    }
+  } catch (e) {
+    console.error('Erreur fetch deals', e);
+    return { lastUpdated: new Date().toISOString(), deals: [] };
+  }
+}
+
+function formatPrice(num, currency = 'EUR') {
+  try { return new Intl.NumberFormat('fr-FR', { style: 'currency', currency }).format(num); } catch { return num + '€'; }
+}
+
+function applyFilters(deals) {
+  const merchant = document.getElementById('filter-merchant')?.value || '';
+  const minDiscount = parseInt(document.getElementById('filter-discount')?.value || '0', 10);
+  const sortBy = document.getElementById('sort-by')?.value || 'discount_desc';
+
+  let out = deals.filter(d => {
+    const okMerchant = merchant ? d.merchant === merchant : true;
+    const okDiscount = (d.discountPct || 0) >= minDiscount;
+    return okMerchant && okDiscount;
+  });
+
+  out.sort((a,b) => {
+    switch (sortBy) {
+      case 'price_asc': return (a.priceCurrent||999999) - (b.priceCurrent||999999);
+      case 'price_desc': return (b.priceCurrent||0) - (a.priceCurrent||0);
+      case 'popular_desc': return (b.popularityScore||0) - (a.popularityScore||0);
+      default: return (b.discountPct||0) - (a.discountPct||0);
+    }
+  });
+  return out;
+}
+
+function renderDeals(deals, { highlightNew = true } = {}) {
+  const grid = document.getElementById('deals-grid');
+  grid.innerHTML = '';
+  deals.forEach(d => {
+    const el = document.createElement('article');
+    el.className = 'deal-card';
+    el.innerHTML = `
+      <img class="deal-thumb" loading="lazy" src="${d.imageUrl || ''}" alt="${(d.title||'').replace(/\"/g,'"')}">
+      <div class="deal-body">
+        <div class="deal-title">${d.title || ''}</div>
+        <div class="deal-price">
+          <span class="now">${d.priceCurrent ? formatPrice(d.priceCurrent) : ''}</span>
+          ${d.priceReference ? `<span class="was">${formatPrice(d.priceReference)}</span>` : ''}
+        </div>
+        <div class="badges">
+          ${d.discountPct ? `<span class="badge discount">-${Math.round(d.discountPct)}%</span>` : ''}
+          ${highlightNew && d.isNewToday ? `<span class="badge new">Nouveau aujourd'hui</span>` : ''}
+          ${d.tags ? d.tags.map(t => `<span class="badge">${t}</span>`).join('') : ''}
+        </div>
+      </div>
+      <div class="card-actions">
+        <a class="button" href="${d.affiliateUrl}" rel="nofollow noopener" target="_blank">Voir l’offre</a>
+      </div>
+    `;
+    grid.appendChild(el);
+  });
+}
+
+// Logique Accueil
+async function loadDealsForHome() {
+  const data = await fetchDeals();
+  const today = new Date().toISOString().slice(0,10); // UTC; côté génération, marque isNewToday=true
+  const onlyToday = (data.deals || []).filter(d => d.isNewToday || (d.firstSeenAt||'').startsWith(today));
+  const filtered = applyFilters(onlyToday);
+  renderDeals(filtered, { highlightNew: true });
+  const last = document.getElementById('last-updated');
+  if (last) last.textContent = new Date(data.lastUpdated || Date.now()).toLocaleString('fr-FR', { timeZone: 'Europe/Paris' });
+
+  // Écoute des filtres
+  document.getElementById('filter-merchant')?.addEventListener('change', () => renderDeals(applyFilters(onlyToday)));
+  document.getElementById('filter-discount')?.addEventListener('change', () => renderDeals(applyFilters(onlyToday)));
+  document.getElementById('sort-by')?.addEventListener('change', () => renderDeals(applyFilters(onlyToday)));
+}
+
+// Logique Catégorie
+async function loadDealsForCategory(cat) {
+  const data = await fetchDeals();
+  const byCat = (data.deals || []).filter(d => (d.category||'').toLowerCase() === cat.toLowerCase());
+  const filtered = applyFilters(byCat);
+  renderDeals(filtered, { highlightNew: false });
+
+  // Écoute des filtres
+  document.getElementById('filter-merchant')?.addEventListener('change', () => renderDeals(applyFilters(byCat), { highlightNew: false }));
+  document.getElementById('filter-discount')?.addEventListener('change', () => renderDeals(applyFilters(byCat), { highlightNew: false }));
+  document.getElementById('sort-by')?.addEventListener('change', () => renderDeals(applyFilters(byCat), { highlightNew: false }));
+}
+
+/* ======================= data/deals-2025-09-15.json (exemple) =======================
+{
+  "lastUpdated": "2025-09-15T10:05:00+02:00",
+  "deals": [
+    {
+      "merchant": "Amazon",
+      "externalId": "B0TEST123",
+      "title": "Casque gaming XYZ 7.1",
+      "category": "gaming",
+      "imageUrl": "https://via.placeholder.com/640x400?text=Casque",
+      "priceCurrent": 49.99,
+      "priceReference": 79.99,
+      "discountPct": 37.5,
+      "affiliateUrl": "https://www.amazon.fr/dp/B0TEST123?tag=TONTAG-21",
+      "firstSeenAt": "2025-09-15T08:10:00+02:00",
+      "lastSeenAt": "2025-09-15T09:55:00+02:00",
+      "isNewToday": true,
+      "tags": ["Prime"]
+    },
+    {
+      "merchant": "Cdiscount",
+      "externalId": "CD-ABC-456",
+      "title": "TV 55\" 4K HDR",
+      "category": "high-tech",
+      "imageUrl": "https://via.placeholder.com/640x400?text=TV+4K",
+      "priceCurrent": 399.0,
+      "priceReference": 599.0,
+      "discountPct": 33.4,
+      "affiliateUrl": "https://www.cdiscount.com/redirect?ref=AFF_ID",
+      "firstSeenAt": "2025-09-14T22:05:00+02:00",
+      "lastSeenAt": "2025-09-15T09:40:00+02:00",
+      "isNewToday": false,
+      "tags": ["Stock limité"]
+    }
+  ]
+}
+*/
+
+/* ======================= netlify/functions/fetch-amazon.js (optionnel) ======================= */
+/**
+ * Netlify Function (Node 18+) pour proxy Amazon PA-API ou autres APIs.
+ * - Configure tes clés en variables d’env : AMAZON_ACCESS_KEY, AMAZON_SECRET_KEY, AMAZON_PARTNER_TAG
+ * - Ne JAMAIS exposer ces clés côté navigateur !
+ */
+
+// exports.handler = async () => {
+//   // TODO: appeler Amazon PA-API avec crypto-sig V4 puis normaliser en format commun
+//   // Pour la démo on renvoie des données factices, mais en prod tu mappes la réponse réelle
+//   const now = new Date().toISOString();
+//   const deals = [
+//     {
+//       merchant: 'Amazon', externalId: 'B0DEMO001', title: 'Souris gaming Ultra', category: 'gaming',
+//       imageUrl: 'https://via.placeholder.com/640x400?text=Souris', priceCurrent: 19.99, priceReference: 39.99,
+//       discountPct: 50, affiliateUrl: `https://www.amazon.fr/dp/B0DEMO001?tag=${process.env.AMAZON_PARTNER_TAG}`,
+//       firstSeenAt: now, lastSeenAt: now, isNewToday: true, tags: ['Prime']
+//     }
+//   ];
+//   return {
+//     statusCode: 200,
+//     headers: { 'Content-Type': 'application/json', 'Cache-Control': 'private, max-age=60' },
+//     body: JSON.stringify({ lastUpdated: now, deals })
+//   };
+// };
+
+
+<!-- ======================= GitHub Pages Starter Pack ======================= -->
+<!-- Dossier minimal à uploader tel quel dans un repo public GitHub. -->
+
+<!-- ===== index.html ===== -->
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Promos du jour | SuperDeals</title>
+  <meta name="description" content="Bons plans du jour : high‑tech, gaming, maison. Contient des liens affiliés." />
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <header class="site-header">
+    <h1>🔥 Bons Plans du Jour</h1>
+    <nav>
+      <a href="index.html" class="active">Accueil</a>
+      <a href="categories.html?cat=gaming">Gaming</a>
+      <a href="categories.html?cat=high-tech">High‑Tech</a>
+      <a href="categories.html?cat=maison">Maison</a>
+      <a href="categories.html?cat=mode">Mode</a>
+    </nav>
+  </header>
+
+  <main>
+    <section class="filters">
+      <label>Marchand
+        <select id="filter-merchant">
+          <option value="">Tous</option>
+          <option>eBay</option>
+          <option>AliExpress</option>
+          <option>Amazon</option>
+          <option>Cdiscount</option>
+        </select>
+      </label>
+      <label>Remise minimale
+        <select id="filter-discount">
+          <option value="0">0%</option>
+          <option value="10" selected>10%</option>
+          <option value="20">20%</option>
+          <option value="30">30%</option>
+          <option value="50">50%</option>
+        </select>
+      </label>
+      <label>Tri
+        <select id="sort-by">
+          <option value="discount_desc" selected>Remise ↓</option>
+          <option value="price_asc">Prix ↑</option>
+          <option value="price_desc">Prix ↓</option>
+          <option value="popular_desc">Popularité ↓</option>
+        </select>
+      </label>
+    </section>
+
+    <section id="deals-grid" class="grid"><p>Chargement…</p></section>
+  </main>
+
+  <footer>
+    <small>⏱️ Mise à jour : <span id="last-updated">—</span> • ℹ️ Ce site contient des liens affiliés.</small>
+  </footer>
+
+  <script src="app.js"></script>
+  <script>
+    window.DEALS_SOURCE = { mode: 'static', staticUrl: './deals.json' };
+    window.addEventListener('DOMContentLoaded', () => loadDealsForHome());
+  </script>
+</body>
+</html>
+
+<!-- ===== categories.html ===== -->
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Catégorie | SuperDeals</title>
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <header class="site-header">
+    <h1>🗂️ Catégorie : <span id="cat-name">—</span></h1>
+    <nav>
+      <a href="index.html">Accueil</a>
+      <a href="categories.html?cat=gaming">Gaming</a>
+      <a href="categories.html?cat=high-tech">High‑Tech</a>
+      <a href="categories.html?cat=maison">Maison</a>
+      <a href="categories.html?cat=mode">Mode</a>
+    </nav>
+  </header>
+
+  <main>
+    <section class="filters">
+      <label>Marchand
+        <select id="filter-merchant">
+          <option value="">Tous</option>
+          <option>eBay</option>
+          <option>AliExpress</option>
+          <option>Amazon</option>
+          <option>Cdiscount</option>
+        </select>
+      </label>
+      <label>Remise minimale
+        <select id="filter-discount">
+          <option value="0">0%</option>
+          <option value="10" selected>10%</option>
+          <option value="20">20%</option>
+          <option value="30">30%</option>
+          <option value="50">50%</option>
+        </select>
+      </label>
+      <label>Tri
+        <select id="sort-by">
+          <option value="discount_desc" selected>Remise ↓</option>
+          <option value="price_asc">Prix ↑</option>
+          <option value="price_desc">Prix ↓</option>
+          <option value="popular_desc">Popularité ↓</option>
+        </select>
+      </label>
+    </section>
+
+    <section id="deals-grid" class="grid"><p>Chargement…</p></section>
+  </main>
+
+  <footer>
+    <small>ℹ️ Contient des liens affiliés.</small>
+  </footer>
+
+  <script src="app.js"></script>
+  <script>
+    window.DEALS_SOURCE = { mode: 'static', staticUrl: './deals.json' };
+    window.addEventListener('DOMContentLoaded', () => {
+      const params = new URLSearchParams(location.search);
+      const cat = params.get('cat') || 'high-tech';
+      document.getElementById('cat-name').textContent = cat;
+      loadDealsForCategory(cat);
+    });
+  </script>
+</body>
+</html>
+
+<!-- ===== styles.css ===== -->
+:root { --bg:#0b0f1a; --card:#131a2a; --text:#e8ecf1; --muted:#9fb0c3; --accent:#5eead4; }
+*{box-sizing:border-box}
+html,body{margin:0;padding:0;background:var(--bg);color:var(--text);font-family:system-ui,-apple-system,Segoe UI,Roboto,sans-serif}
+.site-header{display:flex;gap:1rem;align-items:center;padding:1rem;border-bottom:1px solid #1f2937;position:sticky;top:0;background:rgba(11,15,26,.85);backdrop-filter:blur(8px);z-index:10}
+.site-header h1{margin:0;font-size:1.15rem}
+nav a{color:var(--muted);text-decoration:none;margin-right:.75rem;padding:.25rem .5rem;border-radius:.5rem}
+nav a:hover,nav a.active{color:var(--text);background:#1f2937}
+main{max-width:1200px;margin:0 auto;padding:1rem}
+.filters{display:flex;gap:1rem;flex-wrap:wrap;margin-bottom:1rem}
+.filters label{font-size:.9rem;color:var(--muted);display:flex;flex-direction:column;gap:.25rem}
+select{background:var(--card);color:var(--text);border:1px solid #334155;padding:.5rem .75rem;border-radius:.5rem}
+.grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(230px,1fr));gap:1rem}
+.deal-card{background:var(--card);border:1px solid #1f2937;border-radius:1rem;overflow:hidden;display:flex;flex-direction:column}
+.deal-thumb{width:100%;aspect-ratio:16/10;object-fit:cover;background:#0f172a}
+.deal-body{padding:.75rem;display:grid;gap:.5rem}
+.deal-title{font-size:.95rem;line-height:1.25rem;height:2.5rem;overflow:hidden}
+.deal-price{display:flex;gap:.5rem;align-items:baseline}
+.deal-price .now{font-weight:700}
+.deal-price .was{text-decoration:line-through;color:var(--muted);font-size:.9rem}
+.badges{display:flex;gap:.5rem;flex-wrap:wrap}
+.badge{font-size:.75rem;padding:.15rem .45rem;border-radius:.5rem;border:1px solid #334155;color:var(--muted)}
+.badge.discount{color:#042f2e;background:var(--accent);border-color:transparent}
+.card-actions{padding:.75rem;padding-top:0}
+.button{display:inline-block;text-align:center;width:100%;padding:.6rem .9rem;background:linear-gradient(180deg,#10b981,#059669);color:#06281f;border:none;border-radius:.6rem;font-weight:700;text-decoration:none}
+.button:hover{filter:brightness(1.05)}
+footer{max-width:1200px;margin:0 auto;padding:2rem 1rem;color:var(--muted)}
+
+/* ===== app.js ===== */
+// Utilitaires
+function formatPrice(num, currency='EUR'){try{return new Intl.NumberFormat('fr-FR',{style:'currency',currency}).format(num)}catch{return (num||0)+' €'}}
+function pct(ref,now){if(!ref||!now||ref<=0)return 0;return 100*(ref-now)/ref}
+function keepPromo(d,min=10){const ref=Number(d.priceReference||0),now=Number(d.priceCurrent||0);const disc=d.discountPct??pct(ref,now);return ref>0&&now<ref&&disc>=min}
+
+async function fetchDeals(){
+  const src=window.DEALS_SOURCE||{mode:'static',staticUrl:'./deals.json'};
+  try{
+    const res=await fetch(src.staticUrl+`?t=${Date.now()}`);
+    const data=await res.json();
+    return Array.isArray(data)?{lastUpdated:new Date().toISOString(),deals:data}:data;
+  }catch(e){console.error(e);return{lastUpdated:new Date().toISOString(),deals:[]}}
+}
+
+function applyFilters(list){
+  const merchant=document.getElementById('filter-merchant')?.value||'';
+  const minDisc=parseInt(document.getElementById('filter-discount')?.value||'0',10);
+  const sortBy=document.getElementById('sort-by')?.value||'discount_desc';
+  let out=list.filter(d=>{const okM=merchant?d.merchant===merchant:true;return okM&&keepPromo(d,minDisc)});
+  out.sort((a,b)=>{switch(sortBy){case 'price_asc':return (a.priceCurrent||9e9)-(b.priceCurrent||9e9);case 'price_desc':return (b.priceCurrent||0)-(a.priceCurrent||0);case 'popular_desc':return (b.popularityScore||0)-(a.popularityScore||0);default:return (b.discountPct||pct(b.priceReference,b.priceCurrent))-(a.discountPct||pct(a.priceReference,a.priceCurrent));}});
+  return out;
+}
+
+function renderDeals(list){
+  const grid=document.getElementById('deals-grid');
+  grid.innerHTML='';
+  list.forEach(d=>{
+    const el=document.createElement('article');
+    el.className='deal-card';
+    el.innerHTML=`
+      <img class="deal-thumb" loading="lazy" src="${d.imageUrl||''}" alt="${(d.title||'').replace(/\"/g,'"')}">
+      <div class="deal-body">
+        <div class="deal-title">${d.title||''}</div>
+        <div class="deal-price">
+          <span class="now">${d.priceCurrent?formatPrice(d.priceCurrent):''}</span>
+          ${d.priceReference?`<span class="was">${formatPrice(d.priceReference)}</span>`:''}
+        </div>
+        <div class="badges">
+          ${(d.discountPct??pct(d.priceReference,d.priceCurrent))?`<span class="badge discount">-${Math.round(d.discountPct??pct(d.priceReference,d.priceCurrent))}%</span>`:''}
+          ${d.tags?d.tags.map(t=>`<span class="badge">${t}</span>`).join(''):''}
+        </div>
+      </div>
+      <div class="card-actions">
+        <a class="button" href="${d.affiliateUrl}" target="_blank" rel="nofollow noopener">Voir l’offre</a>
+      </div>`;
+    grid.appendChild(el);
+  });
+}
+
+async function loadDealsForHome(){
+  const data=await fetchDeals();
+  const promos=applyFilters(data.deals||[]);
+  renderDeals(promos);
+  const last=document.getElementById('last-updated');
+  if(last) last.textContent=new Date(data.lastUpdated||Date.now()).toLocaleString('fr-FR',{timeZone:'Europe/Paris'});
+  ['filter-merchant','filter-discount','sort-by'].forEach(id=>document.getElementById(id)?.addEventListener('change',()=>renderDeals(applyFilters(data.deals||[]))));
+}
+
+async function loadDealsForCategory(cat){
+  const data=await fetchDeals();
+  const inCat=(data.deals||[]).filter(d=>(d.category||'').toLowerCase()===cat.toLowerCase());
+  renderDeals(applyFilters(inCat));
+  ['filter-merchant','filter-discount','sort-by'].forEach(id=>document.getElementById(id)?.addEventListener('change',()=>renderDeals(applyFilters(inCat))));
+}
+
+<!-- ===== deals.json (exemple) ===== -->
+[
+  {
+    "merchant": "eBay",
+    "externalId": "1234567890",
+    "title": "Manette PS5 DualSense",
+    "category": "gaming",
+    "imageUrl": "https://i.ebayimg.com/images/g/abcd/s-l1600.jpg",
+    "priceCurrent": 54.99,
+    "priceReference": 69.99,
+    "discountPct": 21,
+    "affiliateUrl": "https://www.ebay.fr/itm/1234567890?campid=VOTRE_CAMPID",
+    "tags": ["eBay"]
+  },
+  {
+    "merchant": "AliExpress",
+    "externalId": "100500999",
+    "title": "Écouteurs Bluetooth ANC",
+    "category": "high-tech",
+    "imageUrl": "https://via.placeholder.com/640x400?text=AliExpress",
+    "priceCurrent": 24.90,
+    "priceReference": 39.90,
+    "discountPct": 38,
+    "affiliateUrl": "https://s.click.aliexpress.com/deeplink?aff_fcid=VOTRE_TRACKING_ID&dl_target_url=https%3A%2F%2Faliexpress.com%2Fitem%2F100500999",
+    "tags": ["AliExpress"]
+  }
+]
+
+<!-- ===== README.md (conseils) ===== -->
+# SuperDeals – Starter GitHub Pages
+
+1. Crée un repo public et ajoute ces fichiers à la racine.
+2. Dans **Settings → Pages**, sélectionne **Branch: main / root**.
+3. Mets tes premiers liens affiliés dans `deals.json` (remplace `VOTRE_CAMPID`, `VOTRE_TRACKING_ID`).
+4. Ouvre l’URL GitHub Pages pour vérifier.
+5. Quand tu voudras automatiser : remplace `DEALS_SOURCE.mode` par `function` et pointe vers une function Netlify/Vercel.
+
+<!-- (Optionnel) Ajoute un fichier vide nommé .nojekyll à la racine pour éviter le traitement Jekyll. -->
+
