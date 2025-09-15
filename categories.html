@@ -1,0 +1,36 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Catégorie | Bons Plans</title>
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <header>
+    <h1>🗂️ Catégorie : <span id="cat-name">—</span></h1>
+    <nav>
+      <a href="index.html">Accueil</a>
+      <a href="categories.html?cat=gaming">Gaming</a>
+      <a href="categories.html?cat=high-tech">High‑Tech</a>
+      <a href="categories.html?cat=maison">Maison</a>
+    </nav>
+  </header>
+
+  <main id="deals-container">
+    <p>Chargement des promos...</p>
+  </main>
+
+  <footer>
+    <small>ℹ️ Contient des liens affiliés.</small>
+  </footer>
+
+  <script src="app.js"></script>
+  <script>
+    const params = new URLSearchParams(location.search);
+    const cat = params.get('cat') || 'gaming';
+    document.getElementById('cat-name').textContent = cat;
+    loadDeals(cat);
+  </script>
+</body>
+</html>

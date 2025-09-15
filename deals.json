@@ -1,0 +1,20 @@
+[
+  {
+    "title": "Manette PS5 DualSense",
+    "priceCurrent": 54.99,
+    "priceReference": 69.99,
+    "discountPct": 21,
+    "affiliateUrl": "https://www.ebay.fr/itm/123456?campid=TONID",
+    "imageUrl": "https://i.ebayimg.com/images/g/xxxx.jpg",
+    "category": "gaming"
+  },
+  {
+    "title": "TV Samsung 55 pouces 4K",
+    "priceCurrent": 449.99,
+    "priceReference": 699.99,
+    "discountPct": 36,
+    "affiliateUrl": "https://www.ebay.fr/itm/789012?campid=TONID",
+    "imageUrl": "https://i.ebayimg.com/images/g/yyyy.jpg",
+    "category": "high-tech"
+  }
+]
